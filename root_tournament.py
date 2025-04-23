@@ -256,7 +256,7 @@ def df_to_excel(df_dict):
 
 # --- Streamlit App ---
 st.set_page_config(page_title="Root Turnier Manager", layout="wide", initial_sidebar_state="expanded")
-st.title("🏆 Root Brettspiel Turnier Manager")
+st.title("🏆 Root Turnier Manager")
 
 # Initialisierung des States
 initialize_state()
