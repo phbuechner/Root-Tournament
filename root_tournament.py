@@ -9,7 +9,7 @@ from collections import defaultdict, Counter # Counter hinzugefügt für Duplika
 # --- Konstanten ---
 FACTIONS = ["Marquise de Cat", "Eyrie Dynasties", "Woodland Alliance", "Vagabond", "Riverfolk Company", "Lizard Cult", "Underground Duchy", "Corvid Conspiracy"]
 MAPS = ["Autumn", "Winter", "Mountain", "Lake"] # Ggf. anpassen/eindeutschen
-TOURNAMENT_POINTS_MAP = {1: 10, 2: 7, 3: 5, 4: 3, 5: 1}
+TOURNAMENT_POINTS_MAP = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
 NUM_PLAYERS = 5
 
 # --- Hilfsfunktionen ---
