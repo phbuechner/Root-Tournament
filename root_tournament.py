@@ -21,9 +21,9 @@ FACTIONS = [
     # "Eisenwächter"     # Beispiel Marodeur
 ]
 MAPS = ["Herbst", "Winter", "Berg", "See"] # Standard deutsche Kartenbezeichnungen
-# Angepasste Punkteverteilung beibehalten
+# Angepasste Punkteverteilung beibehalten (Hinweis: Ggf. für andere Spielerzahlen anpassen)
 TOURNAMENT_POINTS_MAP = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
-NUM_PLAYERS = 5
+# NUM_PLAYERS = 5 # Nicht mehr als globale Konstante benötigt
 
 # --- Hilfsfunktionen ---
 def initialize_state():
@@ -35,13 +35,18 @@ def initialize_state():
     if 'next_turn_order_names' not in st.session_state:
         st.session_state.next_turn_order_names = []
     if 'initial_turn_order' not in st.session_state:
-        st.session_state.initial_turn_order = [] # NEU: Für Spiel 1
+        st.session_state.initial_turn_order = []
     if 'initialized' not in st.session_state:
         st.session_state.initialized = False
     if 'show_faction_warning' not in st.session_state:
         st.session_state.show_faction_warning = False
     if 'warning_messages' not in st.session_state:
          st.session_state.warning_messages = []
+    # NEU: Zustände für Spieler- und Spielanzahl
+    if 'num_players_input' not in st.session_state:
+        st.session_state.num_players_input = 2 # Standardwert oder Minimum
+    if 'total_games_input' not in st.session_state:
+        st.session_state.total_games_input = 1 # Standardwert oder Minimum
 
 def get_player_data_by_name(name):
     """Gibt die Daten eines Spielers anhand des Namens zurück."""
@@ -55,7 +60,6 @@ def calculate_next_turn_order(players):
     if not players:
         return []
     # Sortieren: Zuerst nach Turnierpunkten (aufsteigend), dann nach VP letztes Spiel (absteigend)
-    # Stelle sicher, dass 'last_vp' existiert, bevor sortiert wird
     for p in players:
         p.setdefault('last_vp', 0)
         p.setdefault('total_tp', 0)
@@ -65,10 +69,8 @@ def calculate_next_turn_order(players):
 def generate_standings_df(players):
     """Erstellt ein Pandas DataFrame für die Rangliste."""
     if not players:
-        # Gibt ein leeres DataFrame mit den erwarteten Spalten zurück
         return pd.DataFrame(columns=['Rang', 'Name', 'Ges. Turnierpkt.', 'Ges. Siegpunkte', 'Siege', 'Letzte Spiel VP', 'Ø Platzierung', 'Gespielte Fraktionen'])
 
-    # Stelle sicher, dass alle notwendigen Keys in jedem Spieler-Dictionary vorhanden sind
     for p in players:
         p.setdefault('total_vp', 0)
         p.setdefault('wins', 0)
@@ -82,7 +84,6 @@ def generate_standings_df(players):
 
     display_players = copy.deepcopy(players)
 
-    # Berechne Ø Platzierung
     num_games = len(st.session_state.get('games', []))
     if num_games > 0:
         for p in display_players:
@@ -98,10 +99,8 @@ def generate_standings_df(players):
         st.error("Fehler bei der DataFrame-Erstellung. Nicht alle erwarteten Spalten sind vorhanden.")
         return pd.DataFrame(columns=['Rang', 'Name', 'Ges. Turnierpkt.', 'Ges. Siegpunkte', 'Siege', 'Letzte Spiel VP', 'Ø Platzierung', 'Gespielte Fraktionen'])
 
-    # Sortieren für die Anzeige
     df = df.sort_values(by='total_tp', ascending=False).reset_index(drop=True)
     df['Rang'] = df.index + 1
-    # Spalten auswählen und umbenennen
     df = df[['Rang', 'name', 'total_tp', 'total_vp', 'wins', 'last_vp', 'avg_placement', 'played_factions_str']]
     df.columns = ['Rang', 'Name', 'Ges. Turnierpkt.', 'Ges. Siegpunkte', 'Siege', 'Letzte Spiel VP', 'Ø Platzierung', 'Gespielte Fraktionen']
     return df
@@ -115,15 +114,12 @@ def generate_plot_data(games, players):
     player_points_over_time = {name: [0] for name in player_names}
 
     for i, game in enumerate(games):
-        game_number = i + 1
         temp_player_points = {name: player_points_over_time[name][-1] for name in player_names}
-
         for player_result in game.get('results', []):
             player_name = player_result.get('name')
             tp = player_result.get('tp', 0)
             if player_name in temp_player_points:
                  temp_player_points[player_name] += tp
-
         for player_name, total_points in temp_player_points.items():
              if player_name in player_points_over_time:
                 player_points_over_time[player_name].append(total_points)
@@ -239,85 +235,83 @@ initialize_state()
 
 # --- 1. Spieler-Setup (Nur am Anfang) ---
 if not st.session_state.initialized:
-    st.subheader("Spieler und Startreihenfolge für Spiel 1 eingeben")
-    player_name_inputs = {}
-    # Temporäre Liste für Namen zur Auswahl in multiselect
-    temp_player_list = [""] * NUM_PLAYERS
+    st.subheader("Turnier Setup")
     with st.form("player_form"):
-        st.write("Spielernamen:")
-        for i in range(NUM_PLAYERS):
-            # Verwende eindeutige Keys
+        # Eingabe für Spieler- und Spielanzahl
+        num_players = st.number_input("Anzahl der Spieler", min_value=2, max_value=10, value=st.session_state.num_players_input, step=1, key="num_players_selector")
+        total_games = st.number_input("Gesamtzahl der Spiele", min_value=1, value=st.session_state.total_games_input, step=1, key="total_games_selector")
+
+        # Update state if changed
+        st.session_state.num_players_input = num_players
+        st.session_state.total_games_input = total_games
+
+        st.divider()
+        st.write("**Spielernamen eingeben:**")
+        player_name_inputs = {}
+        temp_player_list = [""] * num_players # Dynamische Größe
+        for i in range(num_players):
             player_name_inputs[i] = st.text_input(f"Name Spieler {i+1}", key=f"p_name_{i}")
-            # Aktualisiere die temporäre Liste für die Auswahl
             if player_name_inputs[i]:
                 temp_player_list[i] = player_name_inputs[i]
 
-        # Filter leere Namen für die Auswahl heraus
         available_players_for_order = [name for name in temp_player_list if name]
 
         st.divider()
         st.write("**Startreihenfolge für Spiel 1:**")
-        # Multiselect zur Auswahl der Reihenfolge
         initial_order_selection = st.multiselect(
             "Wähle die Spieler in der gewünschten Zugreihenfolge für das erste Spiel aus:",
             options=available_players_for_order,
-            default=[], # Start mit leerer Auswahl
+            default=[],
             key="initial_order_select",
-            max_selections=NUM_PLAYERS # Erlaube maximal 5 Auswahlen
+            max_selections=num_players # Dynamische max_selections
         )
 
         submitted = st.form_submit_button("Turnier starten")
         if submitted:
-            # Validierung: Namen
             final_player_names = list(player_name_inputs.values())
             unique_names = set(filter(None, final_player_names))
-            if len(unique_names) != NUM_PLAYERS:
-                st.error(f"Bitte genau {NUM_PLAYERS} eindeutige Spielernamen eingeben.")
-            # Validierung: Startreihenfolge
-            elif len(initial_order_selection) != NUM_PLAYERS:
-                 st.error(f"Bitte genau {NUM_PLAYERS} Spieler für die Startreihenfolge auswählen.")
-            elif len(set(initial_order_selection)) != NUM_PLAYERS:
+            # Validierung gegen die ausgewählte Spieleranzahl
+            if len(unique_names) != num_players:
+                st.error(f"Bitte genau {num_players} eindeutige Spielernamen eingeben.")
+            elif len(initial_order_selection) != num_players:
+                 st.error(f"Bitte genau {num_players} Spieler für die Startreihenfolge auswählen.")
+            elif len(set(initial_order_selection)) != num_players:
                  st.error("Jeder Spieler darf in der Startreihenfolge nur einmal vorkommen.")
             else:
-                # Alles gültig, initialisiere Spielerdaten
+                # Speichere die finale Anzahl Spieler und Spiele
+                st.session_state.num_players = num_players
+                st.session_state.total_games = total_games
+                # Initialisiere Spielerdaten
                 st.session_state.players = [
                     {
                         'id': i,
                         'name': name,
-                        'total_tp': 0,
-                        'total_vp': 0,
-                        'wins': 0,
-                        'last_vp': 0,
-                        'played_factions': [],
-                        'played_factions_str': '',
-                        'total_placement_sum': 0,
-                        'games_played': 0
-                     } for i, name in enumerate(final_player_names) # Verwende die ursprüngliche Eingabereihenfolge für IDs
+                        'total_tp': 0, 'total_vp': 0, 'wins': 0, 'last_vp': 0,
+                        'played_factions': [], 'played_factions_str': '',
+                        'total_placement_sum': 0, 'games_played': 0
+                     } for i, name in enumerate(final_player_names)
                 ]
-                # Speichere die vom Benutzer gewählte Startreihenfolge
                 st.session_state.initial_turn_order = initial_order_selection
-                # Wichtig: next_turn_order_names wird erst NACH Spiel 1 berechnet
                 st.session_state.next_turn_order_names = []
                 st.session_state.initialized = True
-                st.rerun() # Rerun script to show main app layout
+                st.rerun()
 
 # --- App Hauptteil (Nach Spieler-Setup) ---
 if st.session_state.initialized:
 
-    # Bestimme die anzuzeigende Zugreihenfolge
     current_game_number = len(st.session_state.get('games', [])) + 1
+
+    # Bestimme die anzuzeigende Zugreihenfolge
     if current_game_number == 1:
-        # Für Spiel 1, verwende die initiale, vom Benutzer festgelegte Reihenfolge
         turn_order_to_display = st.session_state.initial_turn_order
     else:
-        # Ab Spiel 2, berechne die Reihenfolge basierend auf dem letzten Spiel
-        # Stelle sicher, dass die Berechnung nur erfolgt, wenn sie benötigt wird und Daten vorhanden sind
+        # Berechne nur, wenn nötig und Daten vorhanden
         if not st.session_state.next_turn_order_names and st.session_state.players:
              st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
         turn_order_to_display = st.session_state.next_turn_order_names
 
     # Define layout columns
-    col1, col2 = st.columns([2, 3])
+    col1, col2 = st.columns([2, 3]) # Verhältnis ggf. anpassen
 
     with col1:
         st.subheader("📊 Aktuelle Rangliste")
@@ -342,10 +336,21 @@ if st.session_state.initialized:
                 st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        if not turn_order_to_display:
+        # Prüfen, ob das Turnier beendet ist
+        if current_game_number > st.session_state.get('total_games', 0):
+            st.subheader("🏁 Turnier beendet!")
+            st.success(f"Alle {st.session_state.total_games} Spiele wurden protokolliert.")
+            # Optional: Endrangliste nochmal anzeigen?
+            if 'players' in st.session_state and st.session_state.players:
+                st.write("Abschlusstabelle:")
+                final_standings_df = generate_standings_df(st.session_state.players)
+                st.dataframe(final_standings_df, use_container_width=True, hide_index=True)
+
+        elif not turn_order_to_display:
              st.warning("Zugreihenfolge konnte nicht bestimmt werden.")
         else:
-            st.subheader(f"📜 Spiel {current_game_number} protokollieren")
+            # Zeige das Formular zum Protokollieren des nächsten Spiels
+            st.subheader(f"📜 Spiel {current_game_number} von {st.session_state.total_games} protokollieren")
 
             if st.session_state.show_faction_warning:
                  for msg in st.session_state.warning_messages:
@@ -354,7 +359,6 @@ if st.session_state.initialized:
                  st.session_state.warning_messages = []
 
             with st.form("game_log_form"):
-                # Zeige die korrekte Zugreihenfolge an (initial oder berechnet)
                 st.write("**Zugreihenfolge für dieses Spiel:**")
                 st.write(" → ".join(turn_order_to_display))
 
@@ -363,14 +367,12 @@ if st.session_state.initialized:
                 game_results_input = []
                 faction_warning_check = []
 
-                # Iteriere über die Spieler in der KORREKTEN Reihenfolge für DIESES Spiel
                 for i, player_name in enumerate(turn_order_to_display):
                     st.markdown(f"**{i+1}. {player_name}**")
                     input_cols = st.columns(2)
                     with input_cols[0]:
                         player_data = get_player_data_by_name(player_name)
                         played_before = player_data.get('played_factions', []) if player_data else []
-                        # Verwende current_game_number im Key
                         selected_faction = st.selectbox(f"Fraktion für {player_name}", FACTIONS, key=f"faction_{current_game_number-1}_{player_name}")
                         if selected_faction in played_before:
                              faction_warning_check.append(f"Spieler **{player_name}** hat die Fraktion **{selected_faction}** bereits gespielt!")
@@ -384,12 +386,10 @@ if st.session_state.initialized:
 
                 if log_game_button:
                     # --- VALIDIERUNGEN ---
-                    # 1. Dominanz-Check: Haben mehr als 1 Spieler >= 30 VP? (BLOCKIERENDER FEHLER)
                     winners = [res['name'] for res in game_results_input if res['vp'] >= 30]
                     if len(winners) > 1:
                         st.error(f"Fehler: Mehr als ein Spieler ({', '.join(winners)}) hat 30 oder mehr Siegpunkte erreicht. Nur ein Spieler kann das Spiel auf diese Weise gewinnen. Bitte korrigieren.")
-                    # 2. Fraktions-Duplikat-Check: Wurde eine Fraktion mehrfach in DIESEM Spiel gewählt? (BLOCKIERENDER FEHLER)
-                    elif len(winners) <= 1: # Nur prüfen, wenn Dominanz-Check ok ist
+                    else:
                         selected_factions_this_game = [result['faction'] for result in game_results_input]
                         if len(selected_factions_this_game) != len(set(selected_factions_this_game)):
                             counts = Counter(selected_factions_this_game)
@@ -397,39 +397,33 @@ if st.session_state.initialized:
                             st.error(f"Fehler: Die Fraktion(en) **{', '.join(duplicates)}** wurde(n) mehrfach ausgewählt. Jede Fraktion darf pro Spiel nur einmal vorkommen. Bitte korrigieren.")
                         else:
                             # --- Nur fortfahren, wenn beide Checks OK sind ---
-
-                            # 3. Nicht-blockierende Warnungen (Spieler wiederholt Fraktion über Spiele hinweg)
                             if faction_warning_check:
                                 st.session_state.show_faction_warning = True
                                 st.session_state.warning_messages = faction_warning_check
 
-                            # 4. Ergebnisse sortieren und Turnierpunkte berechnen
                             sorted_results = sorted(game_results_input, key=lambda x: x['vp'], reverse=True)
 
-                            # Spiel-Log Eintrag vorbereiten
                             game_log_entry = {
                                 'game_number': current_game_number,
                                 'map': selected_map,
-                                'turn_order': copy.deepcopy(turn_order_to_display), # Wichtig: Aktuelle Reihenfolge speichern
+                                'turn_order': copy.deepcopy(turn_order_to_display),
                                 'results': []
                             }
 
-                            # 5. Ränge, TP berechnen und Spielerstatistiken aktualisieren
                             for rank, result in enumerate(sorted_results, 1):
                                 player_name = result.get('name')
                                 if not player_name: continue
-
                                 player_data = get_player_data_by_name(player_name)
                                 if player_data:
+                                    # Verwende .get(rank, 0) um sicherzustellen, dass auch bei >5 Spielern ein Wert (0) zurückkommt
                                     tp = TOURNAMENT_POINTS_MAP.get(rank, 0)
                                     result['rank'] = rank
                                     result['tp'] = tp
                                     game_log_entry['results'].append(result)
 
-                                    # Spielerstatistiken im State aktualisieren
                                     player_data['total_tp'] = player_data.get('total_tp', 0) + tp
                                     player_data['total_vp'] = player_data.get('total_vp', 0) + result.get('vp', 0)
-                                    player_data['last_vp'] = result.get('vp', 0) # Wichtig für nächste Sortierung
+                                    player_data['last_vp'] = result.get('vp', 0)
                                     current_faction = result.get('faction')
                                     if current_faction and current_faction not in player_data.get('played_factions', []):
                                          player_data.setdefault('played_factions', []).append(current_faction)
@@ -439,18 +433,12 @@ if st.session_state.initialized:
                                     if rank == 1:
                                         player_data['wins'] = player_data.get('wins', 0) + 1
 
-                            # 6. Abgeschlossenen Spiel-Log Eintrag zur Liste hinzufügen
                             st.session_state.setdefault('games', []).append(game_log_entry)
-
-                            # 7. Berechne die Zugreihenfolge für das NÄCHSTE Spiel (wird beim nächsten Laden oben verwendet)
+                            # Berechne die nächste Zugreihenfolge NACH dem Speichern
                             st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
-
-                            # 8. Skript neu laden
                             st.rerun()
-                    # Ende des Else-Blocks (Fraktions-Duplikat-Check)
-                # Ende des Else-Blocks (Dominanz-Check)
 
-            # --- Zusätzliche Auswertungen ---
+            # --- Zusätzliche Auswertungen (nur anzeigen, wenn Spiele vorhanden) ---
             if st.session_state.get('games', []):
                 st.subheader("📊 Fraktions-Statistiken")
                 faction_stats_df = calculate_faction_stats(st.session_state.games, FACTIONS)
