@@ -1,10 +1,10 @@
 import streamlit as st
 import pandas as pd
-import openpyxl # Keep for Excel export even if not directly used in main logic
+import openpyxl # Keep for Excel export
 import plotly.express as px
 import copy
 from io import BytesIO
-from collections import defaultdict, Counter # Counter hinzugefügt für Duplikat-Prüfung
+from collections import defaultdict, Counter
 
 # --- Konstanten (Deutsche Bezeichnungen) ---
 FACTIONS = [
@@ -16,22 +16,19 @@ FACTIONS = [
     "Echsen-Kult",
     "Untergrund-Herzogtum",
     "Krähen-Komplott",
-    # Ggf. weitere Fraktionen aus Erweiterungen hinzufügen, falls gespielt
-    # "Herr der Scharen", # Beispiel Marodeur
-    # "Eisenwächter"     # Beispiel Marodeur
+    # Ggf. weitere Fraktionen aus Erweiterungen hinzufügen
 ]
-MAPS = ["Herbst", "Winter", "Berg", "See"] # Standard deutsche Kartenbezeichnungen
-# Angepasste Punkteverteilung beibehalten (Hinweis: Ggf. für andere Spielerzahlen anpassen)
+MAPS = ["Herbst", "Winter", "Berg", "See"]
+# Angepasste Punkteverteilung
 TOURNAMENT_POINTS_MAP = {1: 5, 2: 4, 3: 3, 4: 2, 5: 1}
-# NUM_PLAYERS = 5 # Nicht mehr als globale Konstante benötigt
 
 # --- Hilfsfunktionen ---
 def initialize_state():
     """Initialisiert den Session State, falls noch nicht geschehen."""
     if 'players' not in st.session_state:
-        st.session_state.players = [] # Liste von Dictionaries
+        st.session_state.players = []
     if 'games' not in st.session_state:
-        st.session_state.games = [] # Liste von Game-Log Dictionaries
+        st.session_state.games = []
     if 'next_turn_order_names' not in st.session_state:
         st.session_state.next_turn_order_names = []
     if 'initial_turn_order' not in st.session_state:
@@ -42,11 +39,12 @@ def initialize_state():
         st.session_state.show_faction_warning = False
     if 'warning_messages' not in st.session_state:
          st.session_state.warning_messages = []
-    # NEU: Zustände für Spieler- und Spielanzahl
+    # NEU: Zustand für Spieleranzahl (statt globaler Konstante)
     if 'num_players_input' not in st.session_state:
-        st.session_state.num_players_input = 2 # Standardwert oder Minimum
-    if 'total_games_input' not in st.session_state:
-        st.session_state.total_games_input = 1 # Standardwert oder Minimum
+        st.session_state.num_players_input = 2 # Mindestanzahl
+    # NEU: Zustand für beendetes Turnier
+    if 'tournament_finished' not in st.session_state:
+        st.session_state.tournament_finished = False
 
 def get_player_data_by_name(name):
     """Gibt die Daten eines Spielers anhand des Namens zurück."""
@@ -59,7 +57,6 @@ def calculate_next_turn_order(players):
     """Berechnet die Zugreihenfolge für das nächste Spiel (ab Spiel 2)."""
     if not players:
         return []
-    # Sortieren: Zuerst nach Turnierpunkten (aufsteigend), dann nach VP letztes Spiel (absteigend)
     for p in players:
         p.setdefault('last_vp', 0)
         p.setdefault('total_tp', 0)
@@ -237,13 +234,11 @@ initialize_state()
 if not st.session_state.initialized:
     st.subheader("Turnier Setup")
     with st.form("player_form"):
-        # Eingabe für Spieler- und Spielanzahl
+        # Eingabe für Spieleranzahl
         num_players = st.number_input("Anzahl der Spieler", min_value=2, max_value=10, value=st.session_state.num_players_input, step=1, key="num_players_selector")
-        total_games = st.number_input("Gesamtzahl der Spiele", min_value=1, value=st.session_state.total_games_input, step=1, key="total_games_selector")
+        # Eingabe für Gesamtspielanzahl entfernt
 
-        # Update state if changed
-        st.session_state.num_players_input = num_players
-        st.session_state.total_games_input = total_games
+        st.session_state.num_players_input = num_players # Update state for dynamic fields
 
         st.divider()
         st.write("**Spielernamen eingeben:**")
@@ -270,7 +265,6 @@ if not st.session_state.initialized:
         if submitted:
             final_player_names = list(player_name_inputs.values())
             unique_names = set(filter(None, final_player_names))
-            # Validierung gegen die ausgewählte Spieleranzahl
             if len(unique_names) != num_players:
                 st.error(f"Bitte genau {num_players} eindeutige Spielernamen eingeben.")
             elif len(initial_order_selection) != num_players:
@@ -278,21 +272,19 @@ if not st.session_state.initialized:
             elif len(set(initial_order_selection)) != num_players:
                  st.error("Jeder Spieler darf in der Startreihenfolge nur einmal vorkommen.")
             else:
-                # Speichere die finale Anzahl Spieler und Spiele
+                # Speichere die finale Anzahl Spieler
                 st.session_state.num_players = num_players
-                st.session_state.total_games = total_games
                 # Initialisiere Spielerdaten
                 st.session_state.players = [
                     {
-                        'id': i,
-                        'name': name,
-                        'total_tp': 0, 'total_vp': 0, 'wins': 0, 'last_vp': 0,
-                        'played_factions': [], 'played_factions_str': '',
+                        'id': i, 'name': name, 'total_tp': 0, 'total_vp': 0, 'wins': 0,
+                        'last_vp': 0, 'played_factions': [], 'played_factions_str': '',
                         'total_placement_sum': 0, 'games_played': 0
                      } for i, name in enumerate(final_player_names)
                 ]
                 st.session_state.initial_turn_order = initial_order_selection
                 st.session_state.next_turn_order_names = []
+                st.session_state.tournament_finished = False # Sicherstellen, dass es nicht beendet ist
                 st.session_state.initialized = True
                 st.rerun()
 
@@ -305,13 +297,12 @@ if st.session_state.initialized:
     if current_game_number == 1:
         turn_order_to_display = st.session_state.initial_turn_order
     else:
-        # Berechne nur, wenn nötig und Daten vorhanden
         if not st.session_state.next_turn_order_names and st.session_state.players:
              st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
         turn_order_to_display = st.session_state.next_turn_order_names
 
     # Define layout columns
-    col1, col2 = st.columns([2, 3]) # Verhältnis ggf. anpassen
+    col1, col2 = st.columns([2, 3])
 
     with col1:
         st.subheader("📊 Aktuelle Rangliste")
@@ -336,21 +327,21 @@ if st.session_state.initialized:
                 st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        # Prüfen, ob das Turnier beendet ist
-        if current_game_number > st.session_state.get('total_games', 0):
+        # Prüfen, ob das Turnier manuell beendet wurde
+        if st.session_state.tournament_finished:
             st.subheader("🏁 Turnier beendet!")
-            st.success(f"Alle {st.session_state.total_games} Spiele wurden protokolliert.")
-            # Optional: Endrangliste nochmal anzeigen?
+            st.success("Das Turnier wurde manuell abgeschlossen.")
+            # Optional: Endrangliste nochmal anzeigen
             if 'players' in st.session_state and st.session_state.players:
                 st.write("Abschlusstabelle:")
                 final_standings_df = generate_standings_df(st.session_state.players)
                 st.dataframe(final_standings_df, use_container_width=True, hide_index=True)
 
+        # Zeige das Formular nur, wenn das Turnier NICHT beendet ist
         elif not turn_order_to_display:
              st.warning("Zugreihenfolge konnte nicht bestimmt werden.")
         else:
-            # Zeige das Formular zum Protokollieren des nächsten Spiels
-            st.subheader(f"📜 Spiel {current_game_number} von {st.session_state.total_games} protokollieren")
+            st.subheader(f"📜 Spiel {current_game_number} protokollieren") # Ohne "von X"
 
             if st.session_state.show_faction_warning:
                  for msg in st.session_state.warning_messages:
@@ -366,6 +357,14 @@ if st.session_state.initialized:
 
                 game_results_input = []
                 faction_warning_check = []
+
+                # Dynamische Anzahl der Eingabefelder basierend auf Spieleranzahl
+                num_players_in_turn_order = len(turn_order_to_display)
+                # Dynamische Punkteverteilung basierend auf Spieleranzahl (Beispiel)
+                # Hier könnte man komplexere Logik einbauen, falls gewünscht
+                # Fürs Erste verwenden wir die feste Map, passen aber die Ränge an
+                current_points_map = {rank: TOURNAMENT_POINTS_MAP.get(rank, 0) for rank in range(1, num_players_in_turn_order + 1)}
+
 
                 for i, player_name in enumerate(turn_order_to_display):
                     st.markdown(f"**{i+1}. {player_name}**")
@@ -415,8 +414,8 @@ if st.session_state.initialized:
                                 if not player_name: continue
                                 player_data = get_player_data_by_name(player_name)
                                 if player_data:
-                                    # Verwende .get(rank, 0) um sicherzustellen, dass auch bei >5 Spielern ein Wert (0) zurückkommt
-                                    tp = TOURNAMENT_POINTS_MAP.get(rank, 0)
+                                    # Verwende die dynamisch angepasste Punkte-Map
+                                    tp = current_points_map.get(rank, 0)
                                     result['rank'] = rank
                                     result['tp'] = tp
                                     game_log_entry['results'].append(result)
@@ -434,7 +433,6 @@ if st.session_state.initialized:
                                         player_data['wins'] = player_data.get('wins', 0) + 1
 
                             st.session_state.setdefault('games', []).append(game_log_entry)
-                            # Berechne die nächste Zugreihenfolge NACH dem Speichern
                             st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
                             st.rerun()
 
@@ -473,8 +471,10 @@ if st.session_state.initialized:
                         else:
                             st.write("Keine Ergebnisdaten für dieses Spiel vorhanden.")
 
-    # --- Export Funktion ---
-    st.sidebar.title("Export")
+    # --- Sidebar mit Export und Beenden-Button ---
+    st.sidebar.title("Optionen")
+
+    # Export Funktion
     if st.session_state.initialized and st.session_state.get('games', []):
         excel_data = {}
         if st.session_state.get('players', []):
@@ -496,13 +496,9 @@ if st.session_state.initialized:
              game_map = game.get('map', 'N/A')
              for result in game.get('results', []):
                  all_games_list.append({
-                     "Spiel Nr": game_num,
-                     "Karte": game_map,
-                     "Spieler": result.get('name', 'N/A'),
-                     "Fraktion": result.get('faction', 'N/A'),
-                     "Siegpunkte (VP)": result.get('vp', 0),
-                     "Platz": result.get('rank', 0),
-                     "Turnierpunkte (TP)": result.get('tp', 0),
+                     "Spiel Nr": game_num, "Karte": game_map, "Spieler": result.get('name', 'N/A'),
+                     "Fraktion": result.get('faction', 'N/A'), "Siegpunkte (VP)": result.get('vp', 0),
+                     "Platz": result.get('rank', 0), "Turnierpunkte (TP)": result.get('tp', 0),
                      "Zugreihenfolge (Spiel)": turn_order_str
                  })
         if all_games_list:
@@ -521,4 +517,14 @@ if st.session_state.initialized:
 
     elif st.session_state.initialized:
         st.sidebar.info("Noch keine Spiele gespielt zum Exportieren.")
+
+    # Button zum Beenden des Turniers (nur anzeigen, wenn initialisiert und noch nicht beendet)
+    if st.session_state.initialized and not st.session_state.tournament_finished:
+        st.sidebar.divider()
+        if st.sidebar.button("🏁 Turnier manuell beenden", type="primary"):
+            st.session_state.tournament_finished = True
+            st.rerun() # Neu laden, um den "Beendet"-Zustand anzuzeigen
+    elif st.session_state.tournament_finished:
+         st.sidebar.success("Turnier wurde beendet.")
+
 
