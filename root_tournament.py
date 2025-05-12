@@ -36,23 +36,23 @@ def initialize_state():
         st.session_state.initial_turn_order = []
     if 'initialized' not in st.session_state:
         st.session_state.initialized = False
-    if 'show_faction_warning' not in st.session_state:
-        st.session_state.show_faction_warning = False
-    if 'warning_messages' not in st.session_state:
-         st.session_state.warning_messages = []
+    # Entfernt, da die spezifische Warnung nicht mehr angezeigt wird
+    # if 'show_faction_warning' not in st.session_state:
+    #     st.session_state.show_faction_warning = False
+    # if 'warning_messages' not in st.session_state:
+    #      st.session_state.warning_messages = []
     if 'num_players_input' not in st.session_state:
         st.session_state.num_players_input = 2
     if 'tournament_finished' not in st.session_state:
         st.session_state.tournament_finished = False
-    # NEU: Zustände für simulierte Werte
     if 'simulated_map_index' not in st.session_state:
-        st.session_state.simulated_map_index = 0 # Standardmäßig erste Karte
+        st.session_state.simulated_map_index = 0
     if 'simulated_factions' not in st.session_state:
-        st.session_state.simulated_factions = {} # Dict: {player_name: faction_index}
+        st.session_state.simulated_factions = {}
     if 'simulated_vps' not in st.session_state:
-        st.session_state.simulated_vps = {} # Dict: {player_name: vp}
+        st.session_state.simulated_vps = {}
     if 'simulation_triggered' not in st.session_state:
-        st.session_state.simulation_triggered = False # Flag, um zu wissen, ob simuliert wurde
+        st.session_state.simulation_triggered = False
 
 
 def get_player_data_by_name(name):
@@ -105,7 +105,7 @@ def generate_standings_df(players):
         st.error("Fehler bei der DataFrame-Erstellung. Nicht alle erwarteten Spalten sind vorhanden.")
         return pd.DataFrame(columns=['Rang', 'Name', 'Ges. Turnierpkt.', 'Ges. Siegpunkte', 'Siege', 'Letzte Spiel VP', 'Ø Platzierung', 'Gespielte Fraktionen'])
 
-    df = df.sort_values(by='total_tp', ascending=False).reset_index(drop=True)
+    df = df.sort_values(by=['total_tp',"total_vp"], ascending=False).reset_index(drop=True)
     df['Rang'] = df.index + 1
     df = df[['Rang', 'name', 'total_tp', 'total_vp', 'wins', 'last_vp', 'avg_placement', 'played_factions_str']]
     df.columns = ['Rang', 'Name', 'Ges. Turnierpkt.', 'Ges. Siegpunkte', 'Siege', 'Letzte Spiel VP', 'Ø Platzierung', 'Gespielte Fraktionen']
@@ -276,7 +276,6 @@ if not st.session_state.initialized:
                 st.session_state.next_turn_order_names = []
                 st.session_state.tournament_finished = False
                 st.session_state.initialized = True
-                # Reset simulation state on new tournament start
                 st.session_state.simulated_map_index = 0
                 st.session_state.simulated_factions = {}
                 st.session_state.simulated_vps = {}
@@ -333,82 +332,70 @@ if st.session_state.initialized:
         else:
             st.subheader(f"📜 Spiel {current_game_number} protokollieren")
 
-            if st.session_state.show_faction_warning:
-                 for msg in st.session_state.warning_messages:
-                     st.warning(msg)
-                 st.session_state.show_faction_warning = False
-                 st.session_state.warning_messages = []
+            # Die Anzeige der Warnung für wiederholte Fraktionen eines Spielers wurde entfernt.
+            # if st.session_state.show_faction_warning:
+            #      for msg in st.session_state.warning_messages:
+            #          st.warning(msg)
+            #      st.session_state.show_faction_warning = False
+            #      st.session_state.warning_messages = []
 
-            # Form für Spieleingabe
             with st.form("game_log_form"):
                 st.write("**Zugreihenfolge für dieses Spiel:**")
                 st.write(" → ".join(turn_order_to_display))
 
-                # Karte auswählen (mit Vorbelegung durch Simulation)
                 map_key = f"map_{current_game_number-1}"
                 selected_map_index = st.session_state.get('simulated_map_index', 0) if st.session_state.simulation_triggered else 0
                 selected_map = st.selectbox("Karte auswählen", MAPS, key=map_key, index=selected_map_index)
 
                 game_results_input = []
-                faction_warning_check = []
+                # faction_warning_check wurde entfernt, da die Warnung nicht mehr angezeigt wird.
                 num_players_in_turn_order = len(turn_order_to_display)
                 current_points_map = {rank: TOURNAMENT_POINTS_MAP.get(rank, 0) for rank in range(1, num_players_in_turn_order + 1)}
 
-                # Eingabefelder für jeden Spieler
                 for i, player_name in enumerate(turn_order_to_display):
                     st.markdown(f"**{i+1}. {player_name}**")
                     input_cols = st.columns(2)
                     with input_cols[0]:
-                        player_data = get_player_data_by_name(player_name)
-                        played_before = player_data.get('played_factions', []) if player_data else []
+                        # Die Prüfung, ob ein Spieler eine Fraktion bereits gespielt hat, wurde entfernt.
+                        # player_data = get_player_data_by_name(player_name)
+                        # played_before = player_data.get('played_factions', []) if player_data else []
                         faction_key = f"faction_{current_game_number-1}_{player_name}"
-                        # Fraktion auswählen (mit Vorbelegung durch Simulation)
                         default_faction_index = st.session_state.get('simulated_factions', {}).get(player_name, 0) if st.session_state.simulation_triggered else 0
                         selected_faction = st.selectbox(f"Fraktion für {player_name}", FACTIONS, key=faction_key, index=default_faction_index)
-                        if selected_faction in played_before:
-                             faction_warning_check.append(f"Spieler **{player_name}** hat die Fraktion **{selected_faction}** bereits gespielt!")
+                        # Die Zeile zum Hinzufügen zur faction_warning_check wurde entfernt.
+                        # if selected_faction in played_before:
+                        #      faction_warning_check.append(f"Spieler **{player_name}** hat die Fraktion **{selected_faction}** bereits gespielt!")
 
                     with input_cols[1]:
                          vp_key = f"vp_{current_game_number-1}_{player_name}"
-                         # VP eingeben (mit Vorbelegung durch Simulation)
                          default_vp = st.session_state.get('simulated_vps', {}).get(player_name, 0) if st.session_state.simulation_triggered else 0
                          vp = st.number_input(f"Siegpunkte (VP) für {player_name}", min_value=0, step=1, key=vp_key, value=default_vp)
 
                     game_results_input.append({'name': player_name, 'faction': selected_faction, 'vp': vp})
 
-                # Buttons am Ende des Formulars
                 form_buttons_cols = st.columns(2)
                 with form_buttons_cols[0]:
                     simulate_button = st.form_submit_button("🎲 Spiel simulieren")
                 with form_buttons_cols[1]:
                     log_game_button = st.form_submit_button("💾 Spiel speichern", type="primary")
 
-
-                # --- Simulationslogik ---
                 if simulate_button:
-                    st.session_state.simulation_triggered = True # Flag setzen
-
-                    # 1. Karte simulieren
+                    st.session_state.simulation_triggered = True
                     sim_map_index = random.choice(range(len(MAPS)))
                     st.session_state.simulated_map_index = sim_map_index
-
-                    # 2. Fraktionen simulieren (einzigartig pro Spiel)
-                    available_factions = FACTIONS[:] # Kopie erstellen
+                    available_factions = FACTIONS[:]
                     random.shuffle(available_factions)
                     sim_factions = {}
                     if len(available_factions) >= len(turn_order_to_display):
                         for i, player_name in enumerate(turn_order_to_display):
                             chosen_faction = available_factions[i]
-                            # Finde den Index der gewählten Fraktion in der Original-FACTIONS-Liste
                             sim_factions[player_name] = FACTIONS.index(chosen_faction)
                         st.session_state.simulated_factions = sim_factions
                     else:
                          st.warning("Nicht genügend einzigartige Fraktionen für die Simulation verfügbar.")
-                         st.session_state.simulated_factions = {} # Reset
-
-                    # 3. Siegpunkte simulieren (1 Gewinner mit 30, Rest 10-29)
+                         st.session_state.simulated_factions = {}
                     sim_vps = {}
-                    if turn_order_to_display: # Nur wenn Spieler vorhanden
+                    if turn_order_to_display:
                         winner_name = random.choice(turn_order_to_display)
                         for player_name in turn_order_to_display:
                             if player_name == winner_name:
@@ -417,22 +404,15 @@ if st.session_state.initialized:
                                 sim_vps[player_name] = random.randint(10, 29)
                         st.session_state.simulated_vps = sim_vps
                     else:
-                        st.session_state.simulated_vps = {} # Reset
-
-                    # Wichtig: Nach dem Setzen der Simulationswerte im State, muss Streamlit neu laden,
-                    # damit die Widgets die neuen Default-Werte anzeigen.
+                        st.session_state.simulated_vps = {}
                     st.rerun()
 
-
-                # --- Speicherlogik ---
                 if log_game_button:
-                    # Setze Simulationsflag zurück, damit beim nächsten Laden keine Vorbelegung erfolgt
                     st.session_state.simulation_triggered = False
                     st.session_state.simulated_map_index = 0
                     st.session_state.simulated_factions = {}
                     st.session_state.simulated_vps = {}
 
-                    # --- VALIDIERUNGEN ---
                     winners = [res['name'] for res in game_results_input if res['vp'] >= 30]
                     if len(winners) > 1:
                         st.error(f"Fehler: Mehr als ein Spieler ({', '.join(winners)}) hat 30 oder mehr Siegpunkte erreicht. Nur ein Spieler kann das Spiel auf diese Weise gewinnen. Bitte korrigieren.")
@@ -443,18 +423,16 @@ if st.session_state.initialized:
                             duplicates = [faction for faction, count in counts.items() if count > 1]
                             st.error(f"Fehler: Die Fraktion(en) **{', '.join(duplicates)}** wurde(n) mehrfach ausgewählt. Jede Fraktion darf pro Spiel nur einmal vorkommen. Bitte korrigieren.")
                         else:
-                            # --- Nur fortfahren, wenn beide Checks OK sind ---
-                            if faction_warning_check:
-                                st.session_state.show_faction_warning = True
-                                st.session_state.warning_messages = faction_warning_check
+                            # Die nicht-blockierende Warnung wurde entfernt.
+                            # if faction_warning_check:
+                            #     st.session_state.show_faction_warning = True
+                            #     st.session_state.warning_messages = faction_warning_check
 
                             sorted_results = sorted(game_results_input, key=lambda x: x['vp'], reverse=True)
-
                             game_log_entry = {
                                 'game_number': current_game_number, 'map': selected_map,
                                 'turn_order': copy.deepcopy(turn_order_to_display), 'results': []
                             }
-
                             for rank, result in enumerate(sorted_results, 1):
                                 player_name = result.get('name')
                                 if not player_name: continue
@@ -464,11 +442,12 @@ if st.session_state.initialized:
                                     result['rank'] = rank
                                     result['tp'] = tp
                                     game_log_entry['results'].append(result)
-
                                     player_data['total_tp'] = player_data.get('total_tp', 0) + tp
                                     player_data['total_vp'] = player_data.get('total_vp', 0) + result.get('vp', 0)
                                     player_data['last_vp'] = result.get('vp', 0)
                                     current_faction = result.get('faction')
+                                    # Die Logik zum Speichern der gespielten Fraktionen bleibt,
+                                    # da sie für die Anzeige in der Rangliste ("Gespielte Fraktionen") benötigt wird.
                                     if current_faction and current_faction not in player_data.get('played_factions', []):
                                          player_data.setdefault('played_factions', []).append(current_faction)
                                     player_data['played_factions_str'] = ", ".join(player_data.get('played_factions', []))
@@ -476,22 +455,18 @@ if st.session_state.initialized:
                                     player_data['games_played'] = player_data.get('games_played', 0) + 1
                                     if rank == 1:
                                         player_data['wins'] = player_data.get('wins', 0) + 1
-
                             st.session_state.setdefault('games', []).append(game_log_entry)
                             st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
                             st.rerun()
 
-            # --- Zusätzliche Auswertungen (nur anzeigen, wenn Spiele vorhanden) ---
             if st.session_state.get('games', []):
                 st.subheader("📊 Fraktions-Statistiken")
                 faction_stats_df = calculate_faction_stats(st.session_state.games, FACTIONS)
                 st.dataframe(faction_stats_df, hide_index=True, use_container_width=True)
-
                 st.subheader("🗺️ Karten-Statistiken")
                 map_stats_df = calculate_map_stats(st.session_state.games, MAPS)
                 st.dataframe(map_stats_df, hide_index=True, use_container_width=True)
 
-            # --- Spielprotokoll anzeigen ---
             st.subheader("📖 Spielprotokoll")
             if not st.session_state.get('games', []):
                 st.info("Noch keine Spiele protokolliert.")
@@ -516,10 +491,7 @@ if st.session_state.initialized:
                         else:
                             st.write("Keine Ergebnisdaten für dieses Spiel vorhanden.")
 
-    # --- Sidebar mit Export und Beenden-Button ---
     st.sidebar.title("Optionen")
-
-    # Export Funktion
     if st.session_state.initialized and st.session_state.get('games', []):
         excel_data = {}
         if st.session_state.get('players', []):
@@ -527,13 +499,10 @@ if st.session_state.initialized:
             excel_data["Rangliste"] = standings_export_df
         else:
              excel_data["Rangliste"] = None
-
         faction_stats_export_df = calculate_faction_stats(st.session_state.games, FACTIONS)
         excel_data["Fraktions-Statistik"] = faction_stats_export_df
-
         map_stats_export_df = calculate_map_stats(st.session_state.games, MAPS)
         excel_data["Karten-Statistik"] = map_stats_export_df
-
         all_games_list = []
         for game in st.session_state.get('games', []):
              turn_order_str = ", ".join(game.get('turn_order', []))
@@ -550,20 +519,16 @@ if st.session_state.initialized:
             excel_data["Spielprotokolle"] = pd.DataFrame(all_games_list)
         else:
             excel_data["Spielprotokolle"] = None
-
         excel_bytes = df_to_excel(excel_data)
-
         st.sidebar.download_button(
             label="💾 Turnierdaten als Excel exportieren",
             data=excel_bytes,
             file_name="root_turnier_ergebnisse.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-
     elif st.session_state.initialized:
         st.sidebar.info("Noch keine Spiele gespielt zum Exportieren.")
 
-    # Button zum Beenden des Turniers
     if st.session_state.initialized and not st.session_state.tournament_finished:
         st.sidebar.divider()
         if st.sidebar.button("🏁 Turnier manuell beenden", type="primary"):
@@ -571,4 +536,3 @@ if st.session_state.initialized:
             st.rerun()
     elif st.session_state.tournament_finished:
          st.sidebar.success("Turnier wurde beendet.")
-
