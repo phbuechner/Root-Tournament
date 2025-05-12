@@ -3,6 +3,7 @@ import pandas as pd
 import openpyxl # Keep for Excel export
 import plotly.express as px
 import copy
+import random # Hinzugefügt für Simulation
 from io import BytesIO
 from collections import defaultdict, Counter
 
@@ -39,12 +40,20 @@ def initialize_state():
         st.session_state.show_faction_warning = False
     if 'warning_messages' not in st.session_state:
          st.session_state.warning_messages = []
-    # NEU: Zustand für Spieleranzahl (statt globaler Konstante)
     if 'num_players_input' not in st.session_state:
-        st.session_state.num_players_input = 2 # Mindestanzahl
-    # NEU: Zustand für beendetes Turnier
+        st.session_state.num_players_input = 2
     if 'tournament_finished' not in st.session_state:
         st.session_state.tournament_finished = False
+    # NEU: Zustände für simulierte Werte
+    if 'simulated_map_index' not in st.session_state:
+        st.session_state.simulated_map_index = 0 # Standardmäßig erste Karte
+    if 'simulated_factions' not in st.session_state:
+        st.session_state.simulated_factions = {} # Dict: {player_name: faction_index}
+    if 'simulated_vps' not in st.session_state:
+        st.session_state.simulated_vps = {} # Dict: {player_name: vp}
+    if 'simulation_triggered' not in st.session_state:
+        st.session_state.simulation_triggered = False # Flag, um zu wissen, ob simuliert wurde
+
 
 def get_player_data_by_name(name):
     """Gibt die Daten eines Spielers anhand des Namens zurück."""
@@ -156,19 +165,13 @@ def calculate_faction_stats(games, factions):
             avg_vp = data['total_vp'] / count
             avg_tp = data['total_tp'] / count
             stats_list.append({
-                'Fraktion': faction,
-                'Gespielt': count,
-                'Siege': data['wins'],
-                'Ø Siegpunkte': f"{avg_vp:.2f}",
-                'Ø Turnierpunkte': f"{avg_tp:.2f}"
+                'Fraktion': faction, 'Gespielt': count, 'Siege': data['wins'],
+                'Ø Siegpunkte': f"{avg_vp:.2f}", 'Ø Turnierpunkte': f"{avg_tp:.2f}"
             })
         else:
              stats_list.append({
-                'Fraktion': faction,
-                'Gespielt': 0,
-                'Siege': 0,
-                'Ø Siegpunkte': '-',
-                'Ø Turnierpunkte': '-'
+                'Fraktion': faction, 'Gespielt': 0, 'Siege': 0,
+                'Ø Siegpunkte': '-', 'Ø Turnierpunkte': '-'
             })
 
     df = pd.DataFrame(stats_list)
@@ -185,7 +188,6 @@ def calculate_map_stats(games, maps):
     for game in games:
         game_map = game.get('map')
         if not game_map: continue
-
         map_data[game_map]['count'] += 1
         for result in game.get('results', []):
             map_data[game_map]['total_vp'] += result.get('vp', 0)
@@ -198,15 +200,12 @@ def calculate_map_stats(games, maps):
         if player_games_on_map > 0:
             avg_vp = data['total_vp'] / player_games_on_map
             stats_list.append({
-                'Karte': map_name,
-                'Gespielt (Spiele)': data['count'],
+                'Karte': map_name, 'Gespielt (Spiele)': data['count'],
                 'Ø Siegpunkte (Gesamt)': f"{avg_vp:.2f}"
             })
         else:
              stats_list.append({
-                'Karte': map_name,
-                'Gespielt (Spiele)': 0,
-                'Ø Siegpunkte (Gesamt)': '-'
+                'Karte': map_name, 'Gespielt (Spiele)': 0, 'Ø Siegpunkte (Gesamt)': '-'
             })
 
     df = pd.DataFrame(stats_list)
@@ -227,23 +226,19 @@ def df_to_excel(df_dict):
 st.set_page_config(page_title="Root Turnier Manager", layout="wide", initial_sidebar_state="expanded")
 st.title("🏆 Root Brettspiel Turnier Manager")
 
-# Initialisierung des States
 initialize_state()
 
 # --- 1. Spieler-Setup (Nur am Anfang) ---
 if not st.session_state.initialized:
     st.subheader("Turnier Setup")
     with st.form("player_form"):
-        # Eingabe für Spieleranzahl
         num_players = st.number_input("Anzahl der Spieler", min_value=2, max_value=10, value=st.session_state.num_players_input, step=1, key="num_players_selector")
-        # Eingabe für Gesamtspielanzahl entfernt
-
-        st.session_state.num_players_input = num_players # Update state for dynamic fields
+        st.session_state.num_players_input = num_players
 
         st.divider()
         st.write("**Spielernamen eingeben:**")
         player_name_inputs = {}
-        temp_player_list = [""] * num_players # Dynamische Größe
+        temp_player_list = [""] * num_players
         for i in range(num_players):
             player_name_inputs[i] = st.text_input(f"Name Spieler {i+1}", key=f"p_name_{i}")
             if player_name_inputs[i]:
@@ -255,10 +250,8 @@ if not st.session_state.initialized:
         st.write("**Startreihenfolge für Spiel 1:**")
         initial_order_selection = st.multiselect(
             "Wähle die Spieler in der gewünschten Zugreihenfolge für das erste Spiel aus:",
-            options=available_players_for_order,
-            default=[],
-            key="initial_order_select",
-            max_selections=num_players # Dynamische max_selections
+            options=available_players_for_order, default=[],
+            key="initial_order_select", max_selections=num_players
         )
 
         submitted = st.form_submit_button("Turnier starten")
@@ -272,20 +265,22 @@ if not st.session_state.initialized:
             elif len(set(initial_order_selection)) != num_players:
                  st.error("Jeder Spieler darf in der Startreihenfolge nur einmal vorkommen.")
             else:
-                # Speichere die finale Anzahl Spieler
                 st.session_state.num_players = num_players
-                # Initialisiere Spielerdaten
                 st.session_state.players = [
-                    {
-                        'id': i, 'name': name, 'total_tp': 0, 'total_vp': 0, 'wins': 0,
-                        'last_vp': 0, 'played_factions': [], 'played_factions_str': '',
-                        'total_placement_sum': 0, 'games_played': 0
-                     } for i, name in enumerate(final_player_names)
+                    {'id': i, 'name': name, 'total_tp': 0, 'total_vp': 0, 'wins': 0,
+                     'last_vp': 0, 'played_factions': [], 'played_factions_str': '',
+                     'total_placement_sum': 0, 'games_played': 0
+                    } for i, name in enumerate(final_player_names)
                 ]
                 st.session_state.initial_turn_order = initial_order_selection
                 st.session_state.next_turn_order_names = []
-                st.session_state.tournament_finished = False # Sicherstellen, dass es nicht beendet ist
+                st.session_state.tournament_finished = False
                 st.session_state.initialized = True
+                # Reset simulation state on new tournament start
+                st.session_state.simulated_map_index = 0
+                st.session_state.simulated_factions = {}
+                st.session_state.simulated_vps = {}
+                st.session_state.simulation_triggered = False
                 st.rerun()
 
 # --- App Hauptteil (Nach Spieler-Setup) ---
@@ -293,7 +288,6 @@ if st.session_state.initialized:
 
     current_game_number = len(st.session_state.get('games', [])) + 1
 
-    # Bestimme die anzuzeigende Zugreihenfolge
     if current_game_number == 1:
         turn_order_to_display = st.session_state.initial_turn_order
     else:
@@ -301,7 +295,6 @@ if st.session_state.initialized:
              st.session_state.next_turn_order_names = calculate_next_turn_order(st.session_state.players)
         turn_order_to_display = st.session_state.next_turn_order_names
 
-    # Define layout columns
     col1, col2 = st.columns([2, 3])
 
     with col1:
@@ -327,21 +320,18 @@ if st.session_state.initialized:
                 st.plotly_chart(fig, use_container_width=True)
 
     with col2:
-        # Prüfen, ob das Turnier manuell beendet wurde
         if st.session_state.tournament_finished:
             st.subheader("🏁 Turnier beendet!")
             st.success("Das Turnier wurde manuell abgeschlossen.")
-            # Optional: Endrangliste nochmal anzeigen
             if 'players' in st.session_state and st.session_state.players:
                 st.write("Abschlusstabelle:")
                 final_standings_df = generate_standings_df(st.session_state.players)
                 st.dataframe(final_standings_df, use_container_width=True, hide_index=True)
 
-        # Zeige das Formular nur, wenn das Turnier NICHT beendet ist
         elif not turn_order_to_display:
              st.warning("Zugreihenfolge konnte nicht bestimmt werden.")
         else:
-            st.subheader(f"📜 Spiel {current_game_number} protokollieren") # Ohne "von X"
+            st.subheader(f"📜 Spiel {current_game_number} protokollieren")
 
             if st.session_state.show_faction_warning:
                  for msg in st.session_state.warning_messages:
@@ -349,41 +339,99 @@ if st.session_state.initialized:
                  st.session_state.show_faction_warning = False
                  st.session_state.warning_messages = []
 
+            # Form für Spieleingabe
             with st.form("game_log_form"):
                 st.write("**Zugreihenfolge für dieses Spiel:**")
                 st.write(" → ".join(turn_order_to_display))
 
-                selected_map = st.selectbox("Karte auswählen", MAPS, key=f"map_{current_game_number-1}")
+                # Karte auswählen (mit Vorbelegung durch Simulation)
+                map_key = f"map_{current_game_number-1}"
+                selected_map_index = st.session_state.get('simulated_map_index', 0) if st.session_state.simulation_triggered else 0
+                selected_map = st.selectbox("Karte auswählen", MAPS, key=map_key, index=selected_map_index)
 
                 game_results_input = []
                 faction_warning_check = []
-
-                # Dynamische Anzahl der Eingabefelder basierend auf Spieleranzahl
                 num_players_in_turn_order = len(turn_order_to_display)
-                # Dynamische Punkteverteilung basierend auf Spieleranzahl (Beispiel)
-                # Hier könnte man komplexere Logik einbauen, falls gewünscht
-                # Fürs Erste verwenden wir die feste Map, passen aber die Ränge an
                 current_points_map = {rank: TOURNAMENT_POINTS_MAP.get(rank, 0) for rank in range(1, num_players_in_turn_order + 1)}
 
-
+                # Eingabefelder für jeden Spieler
                 for i, player_name in enumerate(turn_order_to_display):
                     st.markdown(f"**{i+1}. {player_name}**")
                     input_cols = st.columns(2)
                     with input_cols[0]:
                         player_data = get_player_data_by_name(player_name)
                         played_before = player_data.get('played_factions', []) if player_data else []
-                        selected_faction = st.selectbox(f"Fraktion für {player_name}", FACTIONS, key=f"faction_{current_game_number-1}_{player_name}")
+                        faction_key = f"faction_{current_game_number-1}_{player_name}"
+                        # Fraktion auswählen (mit Vorbelegung durch Simulation)
+                        default_faction_index = st.session_state.get('simulated_factions', {}).get(player_name, 0) if st.session_state.simulation_triggered else 0
+                        selected_faction = st.selectbox(f"Fraktion für {player_name}", FACTIONS, key=faction_key, index=default_faction_index)
                         if selected_faction in played_before:
                              faction_warning_check.append(f"Spieler **{player_name}** hat die Fraktion **{selected_faction}** bereits gespielt!")
 
                     with input_cols[1]:
-                         vp = st.number_input(f"Siegpunkte (VP) für {player_name}", min_value=0, step=1, key=f"vp_{current_game_number-1}_{player_name}")
+                         vp_key = f"vp_{current_game_number-1}_{player_name}"
+                         # VP eingeben (mit Vorbelegung durch Simulation)
+                         default_vp = st.session_state.get('simulated_vps', {}).get(player_name, 0) if st.session_state.simulation_triggered else 0
+                         vp = st.number_input(f"Siegpunkte (VP) für {player_name}", min_value=0, step=1, key=vp_key, value=default_vp)
 
                     game_results_input.append({'name': player_name, 'faction': selected_faction, 'vp': vp})
 
-                log_game_button = st.form_submit_button("Spiel speichern")
+                # Buttons am Ende des Formulars
+                form_buttons_cols = st.columns(2)
+                with form_buttons_cols[0]:
+                    simulate_button = st.form_submit_button("🎲 Spiel simulieren")
+                with form_buttons_cols[1]:
+                    log_game_button = st.form_submit_button("💾 Spiel speichern", type="primary")
 
+
+                # --- Simulationslogik ---
+                if simulate_button:
+                    st.session_state.simulation_triggered = True # Flag setzen
+
+                    # 1. Karte simulieren
+                    sim_map_index = random.choice(range(len(MAPS)))
+                    st.session_state.simulated_map_index = sim_map_index
+
+                    # 2. Fraktionen simulieren (einzigartig pro Spiel)
+                    available_factions = FACTIONS[:] # Kopie erstellen
+                    random.shuffle(available_factions)
+                    sim_factions = {}
+                    if len(available_factions) >= len(turn_order_to_display):
+                        for i, player_name in enumerate(turn_order_to_display):
+                            chosen_faction = available_factions[i]
+                            # Finde den Index der gewählten Fraktion in der Original-FACTIONS-Liste
+                            sim_factions[player_name] = FACTIONS.index(chosen_faction)
+                        st.session_state.simulated_factions = sim_factions
+                    else:
+                         st.warning("Nicht genügend einzigartige Fraktionen für die Simulation verfügbar.")
+                         st.session_state.simulated_factions = {} # Reset
+
+                    # 3. Siegpunkte simulieren (1 Gewinner mit 30, Rest 10-29)
+                    sim_vps = {}
+                    if turn_order_to_display: # Nur wenn Spieler vorhanden
+                        winner_name = random.choice(turn_order_to_display)
+                        for player_name in turn_order_to_display:
+                            if player_name == winner_name:
+                                sim_vps[player_name] = 30
+                            else:
+                                sim_vps[player_name] = random.randint(10, 29)
+                        st.session_state.simulated_vps = sim_vps
+                    else:
+                        st.session_state.simulated_vps = {} # Reset
+
+                    # Wichtig: Nach dem Setzen der Simulationswerte im State, muss Streamlit neu laden,
+                    # damit die Widgets die neuen Default-Werte anzeigen.
+                    st.rerun()
+
+
+                # --- Speicherlogik ---
                 if log_game_button:
+                    # Setze Simulationsflag zurück, damit beim nächsten Laden keine Vorbelegung erfolgt
+                    st.session_state.simulation_triggered = False
+                    st.session_state.simulated_map_index = 0
+                    st.session_state.simulated_factions = {}
+                    st.session_state.simulated_vps = {}
+
                     # --- VALIDIERUNGEN ---
                     winners = [res['name'] for res in game_results_input if res['vp'] >= 30]
                     if len(winners) > 1:
@@ -403,10 +451,8 @@ if st.session_state.initialized:
                             sorted_results = sorted(game_results_input, key=lambda x: x['vp'], reverse=True)
 
                             game_log_entry = {
-                                'game_number': current_game_number,
-                                'map': selected_map,
-                                'turn_order': copy.deepcopy(turn_order_to_display),
-                                'results': []
+                                'game_number': current_game_number, 'map': selected_map,
+                                'turn_order': copy.deepcopy(turn_order_to_display), 'results': []
                             }
 
                             for rank, result in enumerate(sorted_results, 1):
@@ -414,7 +460,6 @@ if st.session_state.initialized:
                                 if not player_name: continue
                                 player_data = get_player_data_by_name(player_name)
                                 if player_data:
-                                    # Verwende die dynamisch angepasste Punkte-Map
                                     tp = current_points_map.get(rank, 0)
                                     result['rank'] = rank
                                     result['tp'] = tp
@@ -518,13 +563,12 @@ if st.session_state.initialized:
     elif st.session_state.initialized:
         st.sidebar.info("Noch keine Spiele gespielt zum Exportieren.")
 
-    # Button zum Beenden des Turniers (nur anzeigen, wenn initialisiert und noch nicht beendet)
+    # Button zum Beenden des Turniers
     if st.session_state.initialized and not st.session_state.tournament_finished:
         st.sidebar.divider()
         if st.sidebar.button("🏁 Turnier manuell beenden", type="primary"):
             st.session_state.tournament_finished = True
-            st.rerun() # Neu laden, um den "Beendet"-Zustand anzuzeigen
+            st.rerun()
     elif st.session_state.tournament_finished:
          st.sidebar.success("Turnier wurde beendet.")
-
 
